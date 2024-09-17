@@ -1,7 +1,7 @@
 from db.db import SessionLocal
 from models import User, OTP
 from core.security import get_password_hash,getSecretKey,verify_password
-
+from schemas import OTPOut
 from typing import Any, Dict, Optional, Union
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -21,7 +21,7 @@ def processForgotPassword(db: Session, identifier: str, is_email: bool):
     if user:
         otp = getOtp(db=db, username=user.username)
         if otp:
-            return {"message": "OTP sent", "OTP": otp["otp"],"secretKey":otp["secret_key"]}
+            return OTPOut(message="otp sented",otp=otp["otp"],secret_key=otp["secret_key"])
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Can't generate OTP"
@@ -90,7 +90,7 @@ def resetPassword(db: Session, secret_key: str, otp: int, newpassword: str):
         verify = verifyOtp(db=db, secret_key=user.secret_key, otp=otp)
         if verify["status"] == 200:
             updateUserPassword(db=db, username=user.username, password=newpassword)
-            return dict(status_code=status.HTTP_200_OK, detail="Password Changed")
+            return dict(message ="Password Changed")
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP"

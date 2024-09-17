@@ -50,12 +50,12 @@ async def forgotPassword(
     *,
     db: Session = Depends(get_db),
     username: str | None = Body(default=None,description="Username if user selected username"),
-    email: EmailStr | None = Body(default=None,description="Email if user selected Email")
+    email: EmailStr | None = Body(default=None,description="Email if user selected Email")  
 ):
     if username:
-        return await processForgotPassword(db, identifier=username, is_email=False)
+        return processForgotPassword(db, identifier=username, is_email=False)
     elif email:
-        return await processForgotPassword(db, identifier=email, is_email=True)
+        return processForgotPassword(db, identifier=email, is_email=True)
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Value not found"
@@ -72,6 +72,6 @@ async def user_reset_password(
 ):
     # Access the secret_key field from the Pydantic model
     result = resetPassword(
-        db=db, secret_key=secret_key.secret_key, newpassword=newpassword, otp=otp
+        db=db, secret_key=secret_key, newpassword=newpassword, otp=otp
     )
     return result

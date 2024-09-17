@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
-from models import Post, ImagePostItem, Like, Comment,User
+from models import Post, ImagePostItem, Like, Comment,User,About
 from schemas import PostCreate, PostDisplay, ImageDisplay
 from fastapi import HTTPException, status, UploadFile
 from typing import List
@@ -103,8 +103,9 @@ def createPostDisplay(post: Post, db: Session) -> PostDisplay:
 
 def displayPost(db: Session, post_id: int):
     post = (
-        db.query(Post).filter(and_(Post.id == post_id, Post.is_active == True)).first()
+        db.query(Post).join(About,About.user_id == Post.user_id).filter(and_(Post.id == post_id, Post.is_active == True, About.account_status == "public")).first()
     )
+    about = get_about(db=db,user_id=post.user_id)
     if not post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Post Not found"
@@ -114,7 +115,7 @@ def displayPost(db: Session, post_id: int):
 
 def displayRecentPost(db: Session):
     posts = (
-        db.query(Post).filter(Post.is_active == 1).order_by(Post.post_time.desc()).all()
+        db.query(Post).join(About,About.user_id == Post.user_id).filter(Post.is_active == 1,About.account_status =="public").order_by(Post.post_time.desc()).all()
     )
     if posts:
         return [createPostDisplay(post, db) for post in posts]
@@ -132,11 +133,11 @@ def disablePost(db: Session, post_id: int, user_id: int):
         db.commit()
         db.refresh(post)
         return dict(message="Post deleted")
-    return HTTPException(status_code=404, detail="Post not found")
+    raise HTTPException(status_code=404, detail="Post not found")
 
 
-def disableImages(db: Session, post_id:int,image_ids: list):
-    post = get_post(db=db,post_id=post_id)
+def disableImages(db: Session, post_id:int,image_ids: list[str]):
+    post = getById(db=db,id=post_id)
     if post:
         image = (
         db.query(ImagePostItem)
@@ -144,7 +145,6 @@ def disableImages(db: Session, post_id:int,image_ids: list):
         .update({"is_active": False}, synchronize_session=False)
     )
         db.commit()
-        db.refresh(image)
         return dict(message = "Image deleted")
     raise HTTPException(status_code=404,detail="Post Not found")
 
@@ -161,6 +161,9 @@ def addLike(db: Session, post_id: int, user_id: int):
 
 def postUnlike(db: Session, post_id: int, user_id: int):
     post = getById(db=db, id=post_id)
+    like = db.query(Like).filter(Like.post_id == post_id,Like.user_id == user_id).all()
+    if not like:
+        raise HTTPException(status_code=404,detail="User didnt liked this")
     if post:
         db.query(Like).filter(Like.post_id == post_id, Like.user_id == user_id).delete(
             synchronize_session=False
@@ -217,11 +220,14 @@ def postComment(db: Session, post_id: int, user_id: int, text: str):
         return dict(message="comment added")
     raise HTTPException(status_code=404, detail="post not found")
 
-def postDeleteComment(db: Session, post_id: int, user_id: int):
+def postDeleteComment(db: Session, post_id: int, comment_id: int):
     post = getById(db=db, id=post_id)
+    comment = db.query(Comment).filter(Comment.post_id == post_id,Comment.id == comment_id).all()
+    if not comment:
+        raise HTTPException(status_code=404,detail="User didnt Comment this")
     if post:
         db.query(Comment).filter(
-            Comment.post_id == post_id, Comment.user_id == user_id
+            Comment.post_id == post_id, Comment.id == comment_id
         ).delete(synchronize_session=False)
         db.commit()
         return dict(message="Comment Deleted")
@@ -231,6 +237,9 @@ def postUpdateComment(
     db: Session, post_id: int, user_id: int, comment_id: int, text: str
 ):
     post = getById(db=db, id=post_id)
+    comment = db.query(Comment).filter(Comment.post_id == post_id,Comment.id == comment_id).all()
+    if not comment:
+        raise HTTPException(status_code=404,detail="User didnt Comment this")
     if post:
         comment = (
             db.query(Comment)

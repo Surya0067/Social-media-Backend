@@ -20,19 +20,16 @@ def viewUser(db: Session, username: str):
         )
 
     about = get_about(db=db, user_id=user.id)
-    print(about.account_status)
     if about:
         from curd.post import postCount, userPostList
         post_count = postCount(db=db, user_id=user.id)
         post_ids = userPostList(db=db, user_id=user.id)
         if about.account_status == "private":
-            print(25)
             return {
                 "username": user.username,
                 "fullname": user.full_name,
                 "profile_photo": about.profile_photo if about else None,
             }
-        print(50)
         return {
             "username": user.username,
             "fullname": user.full_name,
@@ -41,7 +38,7 @@ def viewUser(db: Session, username: str):
             "post_count": post_count,
             "post_ids": post_ids,
         }
-    return {"username": user.username, "full_name": user.full_name}
+    return {"username": user.username, "full_name": user.full_name }
 
 
 def updateName(db: Session, user_id: int, user_update: UserName):

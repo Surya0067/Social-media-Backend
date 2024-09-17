@@ -118,7 +118,7 @@ async def userChangepassword(
     return result
 
 
-@router.post("/view-other/{username}",description="User can search the other user with username",response_model=PublicProfileResponse)
+@router.post("/view-other/{username}",description="User can search the other user with username")
 async def viewProfile(
     username: str,
     db: Session = Depends(get_db),

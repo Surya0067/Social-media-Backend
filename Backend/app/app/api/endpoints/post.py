@@ -1,4 +1,15 @@
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Form, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    UploadFile,
+    HTTPException,
+    Form,
+    status,
+    Body,
+    Query,
+    Path,
+)
 from sqlalchemy.orm import Session
 from api.deps import get_db, get_current_user
 from models import User, Post, ImagePostItem
@@ -18,6 +29,7 @@ from schemas import (
 from core.config import settings
 from curd.post import (
     get_post,
+    getById,
     createPost,
     displayPost,
     displayRecentPost,
@@ -51,8 +63,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     "/create-post", description="To create a post", response_model=CommonMessage
 )
 async def createPostEndpoint(
-    caption: str | None = Form(default=None),
-    files: List[UploadFile] | None = File(default=[]),
+    caption: str | None = Form(default=None, description="caption of the post"),
+    files: List[UploadFile] | None = File(
+        default=[], description="User can upload multiple image in a single post"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -74,23 +88,22 @@ async def createPostEndpoint(
 )
 async def addImagesToPost(
     post_id: int,
-    caption: str | None = Form(default=None),
-    files: List[UploadFile] | None = File(default=[]),
+    caption: str | None = Form(
+        default=None, description="if caption change for the post then mention it"
+    ),
+    files: List[UploadFile]  = File(...,
+        description="User can add multiple image to a post with deleting the exitsing image in post",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    post = (
-        db.query(Post)
-        .filter(Post.id == post_id, Post.user_id == current_user.id)
-        .first()
-    )
+    post = get_post(db=db,user_id=current_user.id,post_id=post_id)
     if not post:
         raise HTTPException(
             status_code=404, detail="Post not found or you are not the owner"
         )
-
-    if caption is not None:
-        updatePost(db, post, caption)
+    if caption:
+       updatePost(db, post, caption)
 
     if files:
         file_data = saveImages(files, post_id, UPLOAD_FOLDER)
@@ -103,25 +116,36 @@ async def addImagesToPost(
 # API to update a post, delete selected images, and add new ones
 @router.put(
     "/update-images/{post_id}",
-    description="User can edit the post by adding or deleting multiple image",
+    description="User can edit the post by adding or deleting multiple image ",
     response_model=CommonMessage,
 )
 async def updateImagesInPost(
     post_id: int,
-    caption: str | None = Form(default=None),
-    files: List[UploadFile] | None = File(default=[]),
-    delete_image_ids: List[str] | None = Form(default=[]),
+    caption: str | None = Form(
+        default=None,
+        description="if user update the caption mention it or make as null",
+    ),
+    files: List[UploadFile] | None = File(
+        default=[], description="User can make changes to post by replacing it"
+    ),
+    delete_image_UUIDS: List[str] | None = Form(
+        default=[], description="mention the image uuid for making changes"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     post = get_post(db=db, user_id=current_user.id, post_id=post_id)
 
+
     if caption is not None:
         updatePost(db, post, caption)
+    if caption is None:
+        post.caption = post.caption
+        db.commit()
 
     # If delete_image_ids are UUIDs, filter by image_id instead of id
-    if delete_image_ids:
-        disableImages(db=db, image_ids=delete_image_ids)
+    if delete_image_UUIDS:
+        disableImages(db=db, image_ids=delete_image_UUIDS)
 
     if files:
         file_data = saveImages(files, post_id, UPLOAD_FOLDER)
@@ -132,12 +156,12 @@ async def updateImagesInPost(
 
 
 @router.get(
-    "/show-post",
+    "/show-post/{post_id}",
     description="displaying the particular image",
     response_model=PostDisplay,
 )
 async def showPost(
-    post_id: int,
+    post_id: int = Path(..., description="post id to view the image"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -152,7 +176,7 @@ async def showPost(
 
 @router.get(
     "/list-post",
-    description="list of post to display the user",
+    description="list of post to display with the user",
     response_model=ListPostDisplay,
 )
 async def listPost(
@@ -168,31 +192,33 @@ async def listPost(
 
 
 @router.patch(
-    "/delete-post", description="Deleting Whole Image", response_model=CommonMessage
+    "/delete-post/{post_id}", description="Deleting Whole Image", response_model=CommonMessage
 )
 async def deletePost(
     *,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    post_id: int
+    post_id: int = Path(..., description="To delete a paticular post")
 ):
     post = disablePost(db=db, post_id=post_id, user_id=current_user.id)
     return post
 
 
 @router.patch(
-    "/delete-image/{image_id}",
+    "/delete-image/{post_id}",
     response_model=CommonMessage,
-    description="we can delete multiple images in a paticular post",
+    description="we can delete multiple images or single image in a paticular post",
 )
-async def deleteImage(
+async def deleteImages(
     *,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    post_id: int,
-    image_id: str
+    post_id: int = Path(..., description="metion the post id to delete the images"),
+    image_uuid: List[str] = Body(
+        ..., description="metion the image uuid to delete the image"
+    )
 ):
-    image = disableImages(db=db, post_id=post_id, image_id=image_id)
+    image = disableImages(db=db, post_id=post_id, image_ids=image_uuid)
     return image
 
 
@@ -202,10 +228,9 @@ async def deleteImage(
     response_model=CommonMessage,
 )
 async def like(
-    *,
-    post_id: int,
+    post_id: int = Path(..., description="Post id of the user liked"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     like = addLike(db=db, post_id=post_id, user_id=current_user.id)
     return like
@@ -218,7 +243,7 @@ async def like(
 )
 async def unlike(
     *,
-    post_id: int,
+    post_id: int = Path(..., description="Post id of the user unliked"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -232,7 +257,7 @@ async def unlike(
     response_model=LikeResponse,
 )
 async def recentLike(
-    post_id: int,
+    post_id: int = Path(..., description="Post id to get the last liked by"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -246,7 +271,7 @@ async def recentLike(
     response_model=LikesListResponse,
 )
 async def totalLikeUser(
-    post_id: int,
+    post_id: int = Path(..., description="Post id to get the list of username"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -260,7 +285,7 @@ async def totalLikeUser(
     response_model=PostCountResponse,
 )
 async def totalLike(
-    post_id: int,
+    post_id: int = Path(..., description="Post id to get the count of like"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -274,8 +299,8 @@ async def totalLike(
     response_model=CommentResponse,
 )
 async def comment(
-    post_id: int,
-    text: str,
+    post_id: int = Path(..., description="Post id of the user commented"),
+    text: str = Body(..., description="Comment in 255 chararter is the limit"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -289,11 +314,14 @@ async def comment(
     response_model=CommentResponse,
 )
 async def deleteComment(
-    post_id: int,
+    post_id: int = Path(..., description="Postid which user deleted the comment"),
+    comment_id: int = Body(
+        ..., description="Comment id of the user deleted the comment"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    comment = postDeleteComment(db=db, post_id=post_id, user_id=current_user.id)
+    comment = postDeleteComment(db=db, comment_id=comment_id, post_id=post_id)
     return comment
 
 
@@ -303,9 +331,9 @@ async def deleteComment(
     response_model=CommentResponse,
 )
 async def updateComment(
-    post_id: int,
-    comment_id: int,
-    text: str,
+    post_id: int = Path(..., description="post id of the user edited the comment"),
+    comment_id: int = Body(..., description="Comment id of the user edited"),
+    text: str = Body(..., description="Text of the comment"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -320,28 +348,30 @@ async def updateComment(
 
 
 @router.get(
-    "/display-comment/{post_id}",
-    description="Display all comments on a post.",
-    response_model=CommentsListResponse,
-)
-async def displayComment(
-    post_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    comment = listOfComment(db=db, post_id=post_id)
-    return comment
-
-
-@router.get(
     "/comment-count/{post_id}",
     description="Get the total number of comments on a post.",
     response_model=CommentCountResponse,
 )
 async def totalCommentCount(
-    post_id: int,
+    post_id: int = Path(
+        ..., description="enter the post id to get the total count of comments"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     comment = commentCount(db=db, post_id=post_id)
+    return comment
+
+
+@router.get(
+    "/display-comment/{post_id}",
+    description="Display all comments on a post.",
+    response_model=CommentsListResponse,
+)
+async def displayComment(
+    post_id: int = Path(..., description="enter the post id to display the comments"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    comment = listOfComment(db=db, post_id=post_id)
     return comment

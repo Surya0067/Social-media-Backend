@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from core.security import get_password_hash, verify_password
 from schemas import UserCreate, UserOut
-from models import User
+from models import User,About
 from core.security import get_password_hash,getSecretKey
 from utilis import getOtp
 
@@ -32,6 +32,7 @@ def createUser(db: Session, user: UserCreate):
     db.add(
         new_user
     )
+    db.add(About(user_id = new_user.id))
     otp = getOtp(db=db, username=user.username)
     db.commit()
     return UserOut(
