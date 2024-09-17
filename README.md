@@ -1,0 +1,1 @@
+A Social media backend using Python, FastAPI, SQLAlchemy, and MySQL. This backend will handle user registration, authentication, profile management, posting, viewing posts, and chat functionalities, providing a seamless experience for users.
